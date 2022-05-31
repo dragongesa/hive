@@ -1,7 +1,7 @@
 part of hive;
 
 /// Default encryption algorithm. Uses AES256 CBC with PKCS7 padding.
-class HiveAesCipher implements HiveCipher {
+class HiveAesCipher extends HiveCipher {
   static final _ivRandom = Random.secure();
 
   late final AesCbcPkcs7 _cipher;
@@ -24,7 +24,7 @@ class HiveAesCipher implements HiveCipher {
   int calculateKeyCrc() => _keyCrc;
 
   @override
-  int decrypt(
+  FutureOr<int> decrypt(
       Uint8List inp, int inpOff, int inpLength, Uint8List out, int outOff) {
     var iv = inp.view(inpOff, 16);
 
@@ -36,14 +36,21 @@ class HiveAesCipher implements HiveCipher {
   Uint8List generateIv() => _ivRandom.nextBytes(16);
 
   @override
-  int encrypt(
-      Uint8List inp, int inpOff, int inpLength, Uint8List out, int outOff) {
+  FutureOr<ParallelEncryption> encryptParallel(
+      Uint8List inp,
+      int inpOff,
+      int inpLength,
+      Uint8List Function() getOut,
+      int Function() getOutOff,
+      ) {
     var iv = generateIv();
-    out.setAll(outOff, iv);
 
-    var len = _cipher.encrypt(iv, inp, 0, inpLength, out, outOff + 16);
+    final out = Uint8List.fromList(getOut());
+    out.setAll(getOutOff(), iv);
 
-    return len + 16;
+    var len = _cipher.encrypt(iv, inp, 0, inpLength, out, getOutOff() + 16);
+
+    return ParallelEncryption.serial(out);
   }
 
   @override

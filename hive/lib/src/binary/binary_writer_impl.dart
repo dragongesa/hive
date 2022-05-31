@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -19,6 +20,11 @@ class BinaryWriterImpl extends BinaryWriter {
   ByteData? _byteDataInstance;
 
   int _offset = 0;
+
+  /// contains pending binary operations on the output
+  ///
+  /// This is used to archive asynchronous encryption in background
+  final List<Future<Uint8List>> _ongoingOperations = [];
 
   @pragma('vm:prefer-inline')
   @pragma('dart2js:tryInline')
@@ -268,7 +274,7 @@ class BinaryWriterImpl extends BinaryWriter {
   }
 
   /// Not part of public API
-  int writeFrame(Frame frame, {HiveCipher? cipher}) {
+  Future<int> writeFrame(Frame frame, {HiveCipher? cipher}) async {
     ArgumentError.checkNotNull(frame);
 
     var startOffset = _offset;
@@ -281,7 +287,7 @@ class BinaryWriterImpl extends BinaryWriter {
       if (cipher == null) {
         write(frame.value);
       } else {
-        writeEncrypted(frame.value, cipher);
+        await writeEncrypted(frame.value, cipher);
       }
     }
 
@@ -394,8 +400,8 @@ class BinaryWriterImpl extends BinaryWriter {
   /// Not part of public API
   @pragma('vm:prefer-inline')
   @pragma('dart2js:tryInline')
-  void writeEncrypted(dynamic value, HiveCipher cipher,
-      {bool writeTypeId = true}) {
+  Future<void> writeEncrypted(dynamic value, HiveCipher cipher,
+      {bool writeTypeId = true}) async {
     var valueWriter = BinaryWriterImpl(_typeRegistry)
       ..write(value, writeTypeId: writeTypeId);
     var inp = valueWriter._buffer;
@@ -403,14 +409,56 @@ class BinaryWriterImpl extends BinaryWriter {
 
     _reserveBytes(cipher.maxEncryptedSize(inp));
 
-    var len = cipher.encrypt(inp, 0, inpLength, _buffer, _offset);
+    // the supposed output length
+    int len;
 
+    /// compatibility to deprecated implementations
+    // ignore: deprecated_member_use_from_same_package
+    if (cipher.encrypt != null) {
+      // ignore: deprecated_member_use_from_same_package
+      len = await cipher.encrypt!.call(inp, 0, inpLength, _buffer, _offset);
+    } else {
+      final parallel = await cipher.encryptParallel(
+          inp, 0, inpLength, () => _buffer, () => _offset);
+
+      /// in case parallel operation is supported by the cipher, store the
+      /// operation
+
+      void applyOperation(Uint8List result) {
+        final outEnd = _offset + parallel.outputLength;
+        if (outEnd > _buffer.length) {
+          print(outEnd);
+          print(_buffer.length);
+          _buffer.length = outEnd;
+        }
+        _buffer.setRange(_offset, outEnd, result);
+        print(_buffer);
+      }
+
+      final operation = parallel.operation;
+      if (operation is Future<Uint8List>) {
+        _ongoingOperations.add(operation);
+        operation.then((result) {
+          applyOperation(result);
+          _ongoingOperations.remove(operation);
+        });
+      } else {
+        applyOperation(operation);
+      }
+
+      len = parallel.outputLength;
+    }
     _offset += len;
   }
 
   /// Not part of public API
-  Uint8List toBytes() {
-    return Uint8List.view(_buffer.buffer, 0, _offset);
+  FutureOr<Uint8List> toBytes() {
+    print('${_ongoingOperations.length} operations ongoing...');
+    if (_ongoingOperations.isEmpty) {
+      return Uint8List.view(_buffer.buffer, 0, _offset);
+    } else {
+      return Future.wait(_ongoingOperations).then((value) => toBytes());
+    }
   }
 
   @pragma('vm:prefer-inline')
@@ -425,4 +473,7 @@ class BinaryWriterImpl extends BinaryWriter {
     x |= x >> 16;
     return x + 1;
   }
+
+  @visibleForTesting
+  get operations => _ongoingOperations;
 }

@@ -166,7 +166,16 @@ abstract class BoxBaseImpl<E> implements BoxBase<E> {
   Future<void> close() async {
     if (!_open) return;
 
-    _open = false;
+    try {
+      await flush();
+    } catch (e) {
+      print('Box already flushed');
+    } finally {
+      _open = false;
+    }
+
+    print('Closing');
+
     await keystore.close();
     hive.unregisterBox(name);
 
