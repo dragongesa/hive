@@ -2,7 +2,7 @@ builders:
   hive_generator:
     import: "package:hive_generator/hive_generator.dart"
     builder_factories: ["getBuilder"]
-    build_extensions: {".dart": ["hive_generator.g.part"]}
+    build_extensions: {".dart": [".db.dart"]}
     auto_apply: dependents
-    build_to: cache
+    build_to: source
     applies_builders: ["source_gen|combining_builder"]
