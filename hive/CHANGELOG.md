@@ -1,3 +1,25 @@
+# 3.0.0-dev
+
+### Enchantments
+
+- Implemented in-memory storage backend
+- Added `notify` parameter to public APIs
+- Web Worker support
+- Threaded AesCipher support (requires hive_flutter >=2.0.0-dev)
+
+# 2.2.3
+
+### Enhancements
+
+- Exposed `resetAdapters` method for testing - [#1014](https://github.com/hivedb/hive/pull/1014)
+- Removed unnecessary print statement - [#1015](https://github.com/hivedb/hive/pull/1015)
+
+# 2.2.2
+
+### Fixes
+
+- Register DateTime adapter on web - [#983](https://github.com/hivedb/hive/pull/983)
+
 # 2.2.1
 
 ### Fixes
